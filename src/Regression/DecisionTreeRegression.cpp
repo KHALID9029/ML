@@ -52,10 +52,6 @@ std::vector<double> DecisionTreeRegression::predict(std::vector<std::vector<doub
 // growTree function: Grows a decision tree regression model using the given data and parameters //
 Node* DecisionTreeRegression::growTree(std::vector<std::vector<double>>& X, std::vector<double>& y, int depth) {
 
-
-	int split_idx = -1;
-	double split_thresh = 0.0;
-
 	/* Implement the following:
 		--- define stopping criteria
     	--- Loop through candidate features and potential split thresholds.
@@ -124,7 +120,7 @@ Node* DecisionTreeRegression::growTree(std::vector<std::vector<double>>& X, std:
 	Node* left = growTree(left_X, left_y, depth+1);
 	Node* right = growTree(right_X, right_y, depth+1);
 
-	return new Node(split_idx, split_thresh, left, right); // return a new node with the split index, split threshold, left tree, and right tree
+	return new Node(best_split_idx, best_split_thresh, left, right); // return a new node with the split index, split threshold, left tree, and right tree
 }
 
 
