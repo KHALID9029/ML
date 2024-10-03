@@ -13,7 +13,7 @@
 
 class DecisionTreeRegression {
 public:
-    DecisionTreeRegression(int min_samples_split = 5, int max_depth = 50, int n_feats = 4);
+    DecisionTreeRegression(int min_samples_split = 6, int max_depth = 10, int n_feats = 13);
     void fit(std::vector<std::vector<double>>& X, std::vector<double>& y);
     std::vector<double> predict(std::vector<std::vector<double>>& X);
     std::tuple<double, double, double, double, double, double, 

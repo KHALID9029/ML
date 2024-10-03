@@ -59,7 +59,7 @@ Node* DecisionTreeClassification::growTree(std::vector<std::vector<double>>& X, 
 		---grow the children that result from the split
 	*/
 	
-	double best_gain = -1.0; // set the best gain to -1
+	double best_gain = -1; // set the best gain to -1
 	int split_idx = NULL; // split index
 	double split_thresh = NULL; // split threshold
 	
