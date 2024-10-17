@@ -1,0 +1,229 @@
+#include "FuzzyCMeans.h"
+#include "../DataUtils/DataLoader.h"
+#include "../DataUtils/DataPreprocessor.h"
+#include "../Utils/SimilarityFunctions.h"
+#include "../Evaluation/Metrics.h"
+#include "../Utils/PCADimensionalityReduction.h"
+#include <string>
+#include <vector>
+#include <utility>
+#include <algorithm>
+#include <cmath>
+#include <random> 
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <map>
+#include <unordered_map> 
+using namespace std;
+using namespace System::Windows::Forms; // For MessageBox
+
+
+///  FuzzyCMeans class implementation  ///
+
+
+// FuzzyCMeans function: Constructor for FuzzyCMeans class.//
+FuzzyCMeans::FuzzyCMeans(int numClusters, int maxIterations, double fuzziness)
+	: numClusters_(numClusters), maxIterations_(maxIterations), fuzziness_(fuzziness) {}
+
+
+// fit function: Performs Fuzzy C-Means clustering on the given dataset and return the centroids of the clusters.//
+void FuzzyCMeans::fit(const std::vector<std::vector<double>>& data) 
+{
+	int numDataPoints = data.size();
+	centroids_.resize(numClusters_, vector<double>(data[0].size()));
+
+	// Initialize centroids randomly
+	srand(static_cast<unsigned>(time(nullptr)));
+	for (int i = 0; i < numClusters_; ++i) 
+	{
+		int randomIndex = std::rand() % numDataPoints;
+		centroids_[i] = data[randomIndex]; 
+	}
+
+	initializeMembershipMatrix(numDataPoints);
+
+	// Fuzzy C-means clustering
+	for (int iter = 0; iter < maxIterations_; ++iter)
+	{
+		updateMembershipMatrix(data, centroids_);
+		centroids_ = updateCentroids(data);
+	}
+}
+
+
+// initializeMembershipMatrix function: Initializes the membership matrix with random values that sum up to 1 for each data point.//
+void FuzzyCMeans::initializeMembershipMatrix(int numDataPoints) 
+{
+	membershipMatrix_.clear();
+	membershipMatrix_.resize(numDataPoints, std::vector<double>(numClusters_, 0.0));
+
+	// Initialize membership matrix with random values
+	for (int i = 0; i < numDataPoints; ++i) 
+	{
+		double sum = 0.0;
+		for (int j = 0; j < numClusters_; ++j) 
+		{
+			membershipMatrix_[i][j] = static_cast<double>(rand()) / RAND_MAX; // Random value between 0 and 1
+			sum += membershipMatrix_[i][j];
+		}
+
+		// Normalize membership values to sum to 1
+		for (int j = 0; j < numClusters_; ++j) 
+		{
+			membershipMatrix_[i][j] /= sum;
+		}
+	}
+}
+
+
+// updateMembershipMatrix function: Updates the membership matrix using the fuzzy c-means algorithm.//
+void FuzzyCMeans::updateMembershipMatrix(const std::vector<std::vector<double>>& data, const std::vector<std::vector<double>> centroids_) {
+
+	int numDataPoints = data.size();
+
+	for (int i = 0; i < numDataPoints; ++i) 
+	{
+		double sumInverse = 0.0;
+		for (int j = 0; j < numClusters_; ++j) 
+		{
+			double distance = SimilarityFunctions::euclideanDistance(data[i], centroids_[j]);
+			if (distance == 0) distance = 1e-10; // Avoid division by 0
+			membershipMatrix_[i][j] = 1.0 / distance;
+			sumInverse += membershipMatrix_[i][j];
+		}
+
+		// Normalize membership values to sum up to 1
+		for (int j = 0; j < numClusters_; ++j) 
+		{
+			membershipMatrix_[i][j] /= sumInverse;
+		}
+	}
+}
+
+
+// updateCentroids function: Updates the centroids of the Fuzzy C-Means algorithm.//
+std::vector<std::vector<double>> FuzzyCMeans::updateCentroids(const std::vector<std::vector<double>>& data) 
+{
+	centroids_.clear();
+	centroids_.resize(numClusters_, std::vector<double>(data[0].size(), 0.0));
+
+	std::vector<double> clusterMembershipSum(numClusters_, 0.0);
+
+	for (int j = 0; j < numClusters_; ++j) 
+	{
+		for (int i = 0; i < data.size(); ++i) 
+		{
+			double membershipValue = pow(membershipMatrix_[i][j], fuzziness_);
+			clusterMembershipSum[j] += membershipValue;
+			for (int k = 0; k < data[0].size(); ++k) 
+			{
+				centroids_[j][k] += membershipValue * data[i][k];
+			}
+		}
+
+		// Normalize centroid
+		if (clusterMembershipSum[j] != 0) 
+		{
+			for (int k = 0; k < data[0].size(); ++k) 
+			{
+				centroids_[j][k] /= clusterMembershipSum[j];
+			}
+		}
+	}
+
+	return centroids_;
+}
+
+
+
+// predict function: Predicts the cluster labels for the given data points using the Fuzzy C-Means algorithm.//
+std::vector<int> FuzzyCMeans::predict(const std::vector<std::vector<double>>& data) const {
+	std::vector<int> labels;
+	labels.reserve(data.size());
+
+	for (const auto& point : data) 
+	{
+		double maxMembership = -1.0;
+		int assignedCluster = 0;
+
+		for (int j = 0; j < numClusters_; ++j) 
+		{
+			if (membershipMatrix_[&point - &data[0]][j] > maxMembership) 
+			{
+				maxMembership = membershipMatrix_[&point - &data[0]][j];
+				assignedCluster = j + 1;
+			}
+		}
+		labels.push_back(assignedCluster);
+	}
+
+	return labels;
+}
+
+
+
+/// runFuzzyCMeans: this function runs the Fuzzy C-Means clustering algorithm on the given dataset and 
+/// then returns a tuple containing the evaluation metrics for the training and test sets, 
+/// as well as the labels and predictions for the training and test sets.///
+std::tuple<double, double, std::vector<int>, std::vector<std::vector<double>>>
+FuzzyCMeans::runFuzzyCMeans(const std::string& filePath) {
+	DataPreprocessor DataPreprocessor;
+	try {
+		// Check if the file path is empty
+		if (filePath.empty()) {
+			MessageBox::Show("Please browse and select the dataset file from your PC.");
+			return {}; // Return an empty vector since there's no valid file path
+		}
+
+		// Attempt to open the file
+		std::ifstream file(filePath);
+		if (!file.is_open()) {
+			MessageBox::Show("Failed to open the dataset file");
+			return {}; // Return an empty vector since file couldn't be opened
+		}
+
+		std::vector<std::vector<double>> dataset; // Create an empty dataset vector
+		DataLoader::loadAndPreprocessDataset(filePath, dataset);
+
+		// Use the all dataset for training and testing sets.
+		double trainRatio = 1.0;
+
+		std::vector<std::vector<double>> trainData;
+		std::vector<double> trainLabels;
+		std::vector<std::vector<double>> testData;
+		std::vector<double> testLabels;
+
+		DataPreprocessor::splitDataset(dataset, trainRatio, trainData, trainLabels, testData, testLabels);
+
+		// Fit the model to the training data
+		fit(trainData);
+
+		// Make predictions on the training data
+		std::vector<int> labels = predict(trainData);
+
+		// Calculate evaluation metrics
+		// Calculate Davies BouldinIndex using the actual features and predicted cluster labels
+		double daviesBouldinIndex = Metrics::calculateDaviesBouldinIndex(trainData, labels);
+
+		// Calculate Silhouette Score using the actual features and predicted cluster labels
+		double silhouetteScore = Metrics::calculateSilhouetteScore(trainData, labels);
+
+
+		// Create an instance of the PCADimensionalityReduction class
+		PCADimensionalityReduction pca;
+
+		// Perform PCA and project the data onto a lower-dimensional space
+		int num_dimensions = 2; // Number of dimensions to project onto
+		std::vector<std::vector<double>> reduced_data = pca.performPCA(trainData, num_dimensions);
+
+		MessageBox::Show("Run completed");
+		return std::make_tuple(daviesBouldinIndex, silhouetteScore, std::move(labels), std::move(reduced_data));
+	}
+	catch (const std::exception& e) {
+		// Handle the exception
+		MessageBox::Show("Not Working");
+		std::cerr << "Exception occurred: " << e.what() << std::endl;
+		return std::make_tuple(0.0, 0.0, std::vector<int>(), std::vector<std::vector<double>>());
+	}
+}
